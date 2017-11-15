@@ -9,12 +9,11 @@ from src.plot import *
 
 gpu = True
 
-
-max_epochs = 4
+max_epochs = 2
 
 input_size = 784
-hidden_size_1 = 256
-hidden_size_2 = 256
+hidden_size_1 = 128
+hidden_size_2 = 128
 out_size = 10
 
 batch_size = 128
@@ -23,27 +22,38 @@ lr = 0.001
 mnist = MNIST(batch_size)
 
 squared_loss_sum = SquaredDifferenceLoss()
-ce_loss = nn.CrossEntropyLoss()
 
-module1 = OneLayer(input_size, hidden_size_1)
+
+def optimize_module(module_optimizer, module_generated_sample, module_true_sample):
+    module_optimizer.zero_grad()
+    module_true_sample.volatile = False  # why do I have to set this?
+    module_cost = squared_loss_sum(module_true_sample, module_generated_sample)
+    module_cost.backward(retain_graph=True)
+    module_optimizer.step()
+    return module_cost
+
+
+module1 = OneLayer(input_size, hidden_size_1, nonlinearity=nn.ReLU)
 module1_opt = torch.optim.Adam(module1.parameters(), lr=lr)
 plot_mod1_gen_grad_norm = Plot("Module 1 norm of generated gradients")
-
-module2 = OneLayer(hidden_size_1, hidden_size_2)
-module2_opt = torch.optim.Adam(module2.parameters(), lr=lr)
-plot_mod2_gen_grad_norm = Plot("Module 2 norm of generated gradients")
-
-module3 = OneLayer(hidden_size_2, out_size)
-module3_opt = torch.optim.Adam(module3.parameters(), lr=lr)
-plot_mod3_loss = Plot("Module 3 loss")
 
 grad_module1 = GradModule(hidden_size_1, module1.w.data.shape)
 grad_module1_opt = torch.optim.Adam(grad_module1.parameters(), lr=lr)
 plot_grad_mod1_loss = Plot("Gradient Module 1 loss")
 
+module2 = OneLayer(hidden_size_1, hidden_size_2, nonlinearity=nn.ReLU)
+module2_opt = torch.optim.Adam(module2.parameters(), lr=lr)
+plot_mod2_gen_grad_norm = Plot("Module 2 norm of generated gradients")
+
 grad_module2 = GradModule(hidden_size_2, module2.w.data.shape)
 grad_module2_opt = torch.optim.Adam(grad_module2.parameters(), lr=lr)
 plot_grad_mod2_loss = Plot("Gradient Module 2 loss")
+
+module3 = OneLayer(hidden_size_2, out_size)
+module3_opt = torch.optim.Adam(module3.parameters(), lr=lr)
+plot_mod3_loss = Plot("Module 3 loss")
+
+ce_loss = nn.CrossEntropyLoss()
 
 if gpu:
     module1 = module1.cuda()
@@ -106,25 +116,26 @@ for epoch in range(max_epochs):
         mod3_cost.backward(retain_graph=True)
         module3_opt.step()
 
-        # Training gradient module 2
-        grad_module2_opt.zero_grad()
-        mod2_true_grad_output, mod2_true_grad_w = torch.autograd.grad(mod3_cost, [module2_output, module2.w],
+        mod2_output_true_grad, mod2_w_true_grad = torch.autograd.grad(mod3_cost,
+                                                                      [module2_output] + list(module2.parameters()),
+                                                                      grad_outputs=None,
                                                                       retain_graph=True)
-        mod2_true_grad_w.volatile = False  # why do I have to set this?
-        grad_mod2_cost = squared_loss_sum(mod2_true_grad_w, mod2_generated_grad)
-        grad_mod2_cost.backward(retain_graph=True)
-        grad_module2_opt.step()
+        grad_mod2_cost = optimize_module(grad_module2_opt,
+                                         mod2_generated_grad,
+                                         mod2_w_true_grad)
 
-        # Training gradient module 1
-        grad_module1_opt.zero_grad()
-        mod1_true_grad_w = torch.autograd.grad(module2_output, module1.w,
-                                               grad_outputs=mod2_true_grad_output, retain_graph=True)[0]
-        mod1_true_grad_w.volatile = False  # why do I have to set this?
-        grad_mod1_cost = squared_loss_sum(mod1_true_grad_w, mod1_generated_grad)
-        grad_mod1_cost.backward()
-        grad_module1_opt.step()
+        mod1_output_true_grad, mod1_w_true_grad = torch.autograd.grad(module2_output,
+                                                                      [module1_output] + list(module1.parameters()),
+                                                                      grad_outputs=mod2_output_true_grad,
+                                                                      retain_graph=True)
+        grad_mod1_cost = optimize_module(grad_module1_opt,
+                                         mod1_generated_grad,
+                                         mod1_w_true_grad)
+        # grad_mod1_cost = Variable(torch.randn(1,))
+        # grad_mod2_cost = Variable(torch.randn(1,))
 
         if print_fn(step):
+            print("epoch", epoch, "   step", step)
             stp = len(mnist.train_loader.dataset) * epoch + step * batch_size
             plot_mod3_loss.update(stp, mod3_cost)
             plot_grad_mod1_loss.update(stp, grad_mod1_cost)
@@ -132,7 +143,6 @@ for epoch in range(max_epochs):
             plot_mod1_gen_grad_norm.update(stp, mod1_generated_grad.norm())
             plot_mod2_gen_grad_norm.update(stp, mod2_generated_grad.norm())
             try:
-                print("epoch", epoch, "   step", step)
                 text = "grad_mod1_cost {:.2f}, " \
                        "grad_mod2_cost {:.2f}, " \
                        "mod3_cost {:.2f}, " \

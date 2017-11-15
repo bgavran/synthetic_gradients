@@ -1,34 +1,19 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+
 from src.data_loader import MNIST
+from src.modules import Net
 
 gpu = True
 
-input_size = 784
-hidden_size = 500
-num_classes = 10
-batch_size = 100
+batch_size = 128
 lr = 0.001
 
 mnist = MNIST(batch_size)
 
 
-class Net(nn.Module):
-    def __init__(self, input_size, hidden_size, num_classes):
-        super().__init__()
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_size, num_classes)
-
-    def forward(self, x):
-        out = self.fc1(x)
-        out = self.relu(out)
-        out = self.fc2(out)
-        return out
-
-
-net = Net(input_size, hidden_size, num_classes)
+net = Net([784, 256, 10], nonlinearity=nn.ReLU)
 criterion = nn.CrossEntropyLoss()
 if gpu:
     net = net.cuda()
