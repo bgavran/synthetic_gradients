@@ -8,11 +8,11 @@ from src.modules import OneLayer, GradModule, SquaredDifferenceLoss
 
 gpu = True
 
-max_epochs = 10
+max_epochs = 4
 
 input_size = 784
-hidden_size_1 = 32
-hidden_size_2 = 32
+hidden_size_1 = 256
+hidden_size_2 = 256
 out_size = 10
 
 batch_size = 128
@@ -86,33 +86,33 @@ for epoch in range(max_epochs):
 
         # Training second layer with synthetic gradients
         module2_opt.zero_grad()
-        module2_output = module2(module1(images))
+        module2_output = module2(module1_output)
         mod2_generated_grad = grad_module2(module2_output)
         module2.set_grads(mod2_generated_grad)
         module2_opt.step()
 
         # Training third (last) layer with real gradients
         module3_opt.zero_grad()
-        module3_output = module3(module2(module1(images)))
+        module3_output = module3(module2_output)
         mod3_cost = ce_loss(module3_output, labels)
         mod3_cost.backward(retain_graph=True)
         module3_opt.step()
 
         # Training gradient module 2
         grad_module2_opt.zero_grad()
-        mod2_true_grad = torch.autograd.grad(mod3_cost, module2.w,
-                                             retain_graph=True)[0]
-        mod2_true_grad.volatile = False  # why do I have to set this?
-        grad_mod2_cost = squared_loss_sum(mod2_true_grad, mod2_generated_grad)
+        mod2_true_grad_output, mod2_true_grad_w = torch.autograd.grad(mod3_cost, [module2_output, module2.w],
+                                                                      retain_graph=True)
+        mod2_true_grad_w.volatile = False  # why do I have to set this?
+        grad_mod2_cost = squared_loss_sum(mod2_true_grad_w, mod2_generated_grad)
         grad_mod2_cost.backward(retain_graph=True)
         grad_module2_opt.step()
 
         # Training gradient module 1
         grad_module1_opt.zero_grad()
-        mod1_true_grad = torch.autograd.grad(mod3_cost, module1.w,
-                                             retain_graph=True)[0]
-        mod1_true_grad.volatile = False  # why do I have to set this?
-        grad_mod1_cost = squared_loss_sum(mod1_true_grad, mod1_generated_grad)
+        mod1_true_grad_w = torch.autograd.grad(module2_output, module1.w,
+                                               grad_outputs=mod2_true_grad_output, retain_graph=True)[0]
+        mod1_true_grad_w.volatile = False  # why do I have to set this?
+        grad_mod1_cost = squared_loss_sum(mod1_true_grad_w, mod1_generated_grad)
         grad_mod1_cost.backward()
         grad_module1_opt.step()
 
