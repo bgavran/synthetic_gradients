@@ -2,11 +2,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from src.data_loader import MNIST
 
+from src.data_loader import MNIST
 from src.modules import OneLayer, GradModule, SquaredDifferenceLoss
+from src.plot import *
 
 gpu = True
+
 
 max_epochs = 4
 
@@ -25,18 +27,23 @@ ce_loss = nn.CrossEntropyLoss()
 
 module1 = OneLayer(input_size, hidden_size_1)
 module1_opt = torch.optim.Adam(module1.parameters(), lr=lr)
+plot_mod1_gen_grad_norm = Plot("Module 1 norm of generated gradients")
 
 module2 = OneLayer(hidden_size_1, hidden_size_2)
 module2_opt = torch.optim.Adam(module2.parameters(), lr=lr)
+plot_mod2_gen_grad_norm = Plot("Module 2 norm of generated gradients")
 
 module3 = OneLayer(hidden_size_2, out_size)
 module3_opt = torch.optim.Adam(module3.parameters(), lr=lr)
+plot_mod3_loss = Plot("Module 3 loss")
 
 grad_module1 = GradModule(hidden_size_1, module1.w.data.shape)
 grad_module1_opt = torch.optim.Adam(grad_module1.parameters(), lr=lr)
+plot_grad_mod1_loss = Plot("Gradient Module 1 loss")
 
 grad_module2 = GradModule(hidden_size_2, module2.w.data.shape)
 grad_module2_opt = torch.optim.Adam(grad_module2.parameters(), lr=lr)
+plot_grad_mod2_loss = Plot("Gradient Module 2 loss")
 
 if gpu:
     module1 = module1.cuda()
@@ -70,6 +77,7 @@ def print_fn(step):
     return step % 100 == 0
 
 
+print("Initialized.")
 for epoch in range(max_epochs):
     for step, (images, labels) in enumerate(mnist.train_loader):
         if gpu:
@@ -117,6 +125,12 @@ for epoch in range(max_epochs):
         grad_module1_opt.step()
 
         if print_fn(step):
+            stp = len(mnist.train_loader.dataset) * epoch + step * batch_size
+            plot_mod3_loss.update(stp, mod3_cost)
+            plot_grad_mod1_loss.update(stp, grad_mod1_cost)
+            plot_grad_mod2_loss.update(stp, grad_mod2_cost)
+            plot_mod1_gen_grad_norm.update(stp, mod1_generated_grad.norm())
+            plot_mod2_gen_grad_norm.update(stp, mod2_generated_grad.norm())
             try:
                 print("epoch", epoch, "   step", step)
                 text = "grad_mod1_cost {:.2f}, " \
