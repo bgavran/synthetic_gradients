@@ -12,7 +12,7 @@ class Identity:
 
 
 class Net(nn.Module):
-    def __init__(self, sizes, nonlinearity=Identity, lr=0.001, name="Network"):
+    def __init__(self, sizes, nonlinearity=nn.ReLU, lr=0.001, name="Network"):
         super().__init__()
         self.sizes = sizes
         self.layers = nn.ModuleList([nn.Linear(inp, out) for inp, out in zip(sizes, sizes[1:])])
@@ -29,9 +29,10 @@ class Net(nn.Module):
 
     def update_grads(self, net_output, previous_grad):
         self.opt.zero_grad()
-        grad_list = torch.autograd.grad(net_output, self.parameters(), grad_outputs=previous_grad)
+        grad_list = torch.autograd.grad(net_output, self.parameters(), grad_outputs=previous_grad, retain_graph=True)
         for param, grad in zip(self.parameters(), grad_list):
             param.grad = grad
+        self.opt.step()
 
 
 class Module(nn.Module):

@@ -23,8 +23,8 @@ mnist = MNIST(batch_size)
 
 ########
 
-layer1 = Net([input_size, hidden_size_1], nonlinearity=nn.ReLU, lr=lr, name="Network 1")
-layer2 = Net([hidden_size_1, hidden_size_2], nonlinearity=nn.ReLU, lr=lr, name="Network 2")
+layer1 = Net([input_size, hidden_size_1], lr=lr, name="Network 1")
+layer2 = Net([hidden_size_1, hidden_size_2], lr=lr, name="Network 2")
 layer3 = Net([hidden_size_2, out_size], lr=lr, name="Network 3")
 
 ########
@@ -39,7 +39,7 @@ grad_module2 = Module([hidden_size_2, hidden_size_2], lr=lr, name="Gradient Modu
 
 ########
 
-plot_mod3_loss = Plot("Module 3 loss")
+plot_true_loss = Plot("Module 3 loss")
 
 ce_loss = nn.CrossEntropyLoss()
 
@@ -83,27 +83,29 @@ for epoch in range(max_epochs):
         images = Variable(images.view(-1, 28 * 28))
         labels = Variable(labels)
 
-        # Training first layer with synthetic gradients
+        # Training first layer with real input and synthetic gradients
         layer1_output = layer1(images)
+
         layer1_generated_grad = grad_module1(layer1_output)
         layer1.update_grads(layer1_output, layer1_generated_grad)
-        layer1.opt.step()
 
-        # Training second layer with synthetic gradients
+        # Training second layer with synthetic input and synthetic gradients
         inp_mod2_generated_sample = inp_module_2(images)
         layer2_output = layer2(inp_mod2_generated_sample)
+
         layer2_generated_grad = grad_module2(layer2_output)
         layer2.update_grads(layer2_output, layer2_generated_grad)
-        layer2.opt.step()
 
         # Training third (last) layer with synthetic input and real gradients
         inp_mod3_generated_sample = inp_module_3(images)
         layer3_output = layer3(inp_mod3_generated_sample)
-        mod3_cost = ce_loss(layer3_output, labels)
-        mod3_cost.backward(retain_graph=True)
-        layer3.opt.step()
+
+        true_loss = ce_loss(layer3_output, labels)
+        layer3_true_grad = torch.autograd.grad(true_loss, layer3_output, retain_graph=True)
+        layer3.update_grads(layer3_output, layer3_true_grad)
 
         ###
+
         # grad_mod1_cost = Variable(torch.randn(1, ))
         # grad_mod2_cost = Variable(torch.randn(1, ))
         # inp_mod3_cost = Variable(torch.randn(1, ))
@@ -117,9 +119,9 @@ for epoch in range(max_epochs):
         inp_mod2_cost = inp_module_2.optimize_itself(inp_mod2_generated_sample, layer1_output)
 
         # Training gradient module 2
-        mod2_output_true_grad = torch.autograd.grad(mod3_cost,
+        mod2_output_true_grad = torch.autograd.grad(layer3_output,
                                                     [inp_mod3_generated_sample],
-                                                    grad_outputs=None,
+                                                    grad_outputs=layer3_true_grad,
                                                     retain_graph=True)[0]
         grad_mod2_cost = grad_module2.optimize_itself(layer2_generated_grad, mod2_output_true_grad)
 
@@ -133,7 +135,7 @@ for epoch in range(max_epochs):
         if step % 100 == 0:
             print("epoch", epoch, "   step", step)
             stp = len(mnist.train_loader.dataset) * epoch + step * batch_size
-            plot_mod3_loss.update(stp, mod3_cost)
+            plot_true_loss.update(stp, true_loss)
             grad_module1.plot.update(stp, grad_mod1_cost)
             grad_module2.plot.update(stp, grad_mod2_cost)
             layer1.plot.update(stp, layer1_generated_grad.norm())
